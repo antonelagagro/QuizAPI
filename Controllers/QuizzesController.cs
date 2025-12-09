@@ -3,8 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using QuizAPI.Data;
 using QuizAPI.Domain;
 using QuizAPI.Models;
-using System.ComponentModel.DataAnnotations;
-using System.Drawing;
 
 namespace QuizAPI.Controllers
 {
@@ -59,9 +57,23 @@ namespace QuizAPI.Controllers
                 QuizQuestions = []
             };
 
+            if (request.ExistingQuestions.Count != 0)
+            {
+                var existing_questions = await _db.Questions.Where(a => request.ExistingQuestions.Contains(a.Id)).ToListAsync();
+                foreach (var eq in existing_questions)
+                {
+                    //no new one, just join table
+                    quiz.QuizQuestions.Add(new QuizQuestion
+                    {
+                        Question = eq,
+                        Quiz = quiz
+                    });
+                }
+
+            }
             foreach (var q in request.Questions)
             {
-                var question = new Question { Text = q.Text, Answer = q.Answer };
+                var question = new Question { Text = q.Text, Answer = q.Answer }; //new one then join table
                 quiz.QuizQuestions.Add(new QuizQuestion { Question = question, Quiz = quiz });
             }
 
