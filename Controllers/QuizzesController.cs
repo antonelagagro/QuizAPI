@@ -57,12 +57,11 @@ namespace QuizAPI.Controllers
                 QuizQuestions = []
             };
 
-            if (request.ExistingQuestions.Count != 0)
+            if (request.ExistingQuestionsId.Count != 0)
             {
-                var existing_questions = await _db.Questions.Where(a => request.ExistingQuestions.Contains(a.Id)).ToListAsync();
-                foreach (var eq in existing_questions)
+                var existingQuestions = await _db.Questions.Where(a => request.ExistingQuestionsId.Contains(a.Id)).ToListAsync();
+                foreach (var eq in existingQuestions)
                 {
-                    //no new one, just join table
                     quiz.QuizQuestions.Add(new QuizQuestion
                     {
                         Question = eq,
@@ -73,7 +72,7 @@ namespace QuizAPI.Controllers
             }
             foreach (var q in request.Questions)
             {
-                var question = new Question { Text = q.Text, Answer = q.Answer }; //new one then join table
+                var question = new Question { Text = q.Text, Answer = q.Answer };
                 quiz.QuizQuestions.Add(new QuizQuestion { Question = question, Quiz = quiz });
             }
 
@@ -88,10 +87,7 @@ namespace QuizAPI.Controllers
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateQuizRequest request)
         {
-            var quiz = await _db.Quizzes
-                .Include(a => a.QuizQuestions)
-                .ThenInclude(aa => aa.Question)
-                .FirstOrDefaultAsync(a => a.Id == id);
+            var quiz = await _db.Quizzes.FirstOrDefaultAsync(a => a.Id == id);
 
             if (quiz == null)
                 return NotFound();
@@ -99,12 +95,31 @@ namespace QuizAPI.Controllers
 
             quiz.Title = request.Title ?? quiz.Title;
 
-            _db.QuizQuestions.RemoveRange(quiz.QuizQuestions); //remove from join table
+            _db.QuizQuestions.RemoveRange(quiz.QuizQuestions);
+            quiz.QuizQuestions.Clear();
+            var allQuestions = await _db.Questions.ToListAsync();
 
+            foreach (var questionId in request.ExistingQuestionsId)
+            {
+                var existingQuestion = allQuestions.FirstOrDefault(q => q.Id.Equals(questionId));
+                if (existingQuestion != null)
+                {
+                    _db.QuizQuestions.Add(new QuizQuestion { Question = existingQuestion, Quiz = quiz});
+                }
+            }
             foreach (var question in request.Questions)
             {
-                var q = new Question { Text = question.Text, Answer = question.Answer };
-                _db.QuizQuestions.Add(new QuizQuestion { Question = q, Quiz = quiz, QuizId = quiz.Id });
+                var existingQuestion = allQuestions.FirstOrDefault(q => q.Text == question.Text && q.Answer == question.Answer);
+                if (existingQuestion == null)
+                {
+                    var q = new Question { Text = question.Text, Answer = question.Answer };
+                    _db.QuizQuestions.Add(new QuizQuestion { Question = q, Quiz = quiz, QuizId = quiz.Id });
+                }
+                else
+                {
+                    _db.QuizQuestions.Add(new QuizQuestion { Question = existingQuestion, Quiz = quiz});
+
+                }
             }
 
             await _db.SaveChangesAsync();
