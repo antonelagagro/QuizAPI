@@ -3,17 +3,18 @@ using Microsoft.EntityFrameworkCore;
 using QuizAPI.Data;
 using QuizAPI.Domain;
 using QuizAPI.Models;
+using QuizAPI.Export;
 
 namespace QuizAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
 
-    public class QuizzesController(QuizDbContext db) : ControllerBase
+    public class QuizzesController(QuizDbContext db, QuizExportService exportService) : ControllerBase
     {
 
         private readonly QuizDbContext _db = db;
-
+        private readonly QuizExportService _exportService = exportService;
         [HttpGet]
         public IActionResult GetAll()
         {
@@ -140,6 +141,43 @@ namespace QuizAPI.Controllers
             await _db.Quizzes.Where(a => a.Id == id).ExecuteDeleteAsync();
 
             return NoContent();
+        }
+
+        [HttpGet("export/formats")]
+        public ActionResult<List<string>> GetExportFormats()
+        {
+            var formats = _exportService.GetFormats().ToList();
+            return Ok(formats);
+        }
+
+        [HttpGet("{id:guid}/export")]
+        public async Task<IActionResult> Export(Guid id, [FromQuery] string format)
+        {
+            
+            var quiz = await _db.Quizzes
+                .Include(q => q.QuizQuestions)
+                    .ThenInclude(qq => qq.Question)
+                .FirstOrDefaultAsync(q => q.Id == id);
+
+            if (quiz == null)
+                return NotFound();
+
+            var exporter = _exportService.GetExporter(format);
+            if (exporter == null)
+                return BadRequest($"Unknown export format: {format}");
+
+            var bytes = exporter.Export(quiz);
+
+            // 4. Složi naziv fajla (malo sanitiziramo title)
+            var safeTitle = string.Join("_", quiz.Title.Split(Path.GetInvalidFileNameChars()));
+            if (string.IsNullOrWhiteSpace(safeTitle))
+            {
+                safeTitle = "quiz";
+            }
+
+            var fileName = $"{safeTitle}.{exporter.FileExtension}";
+
+            return File(bytes, exporter.ContentType, fileName);
         }
     }
 }

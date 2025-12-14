@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using QuizAPI.Data;
-
+using QuizAPI.Export;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<QuizDbContext>(options =>
@@ -9,6 +9,7 @@ builder.Services.AddDbContext<QuizDbContext>(options =>
 });
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+builder.Services.AddSingleton<QuizExportService>();
 
 builder.Services.AddSwaggerGen(options =>
 {
