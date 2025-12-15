@@ -1,5 +1,4 @@
-﻿
-namespace QuizAPI.Controllers
+﻿namespace QuizAPI.Models
 {
     internal class QuizListItemResponse
     {
