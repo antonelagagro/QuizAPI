@@ -106,7 +106,6 @@ namespace QuizAPI.Controllers
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateQuizRequest request)
         {
             var quiz = await _db.Quizzes
-                .Include(q => q.QuizQuestions)
                 .FirstOrDefaultAsync(a => a.Id == id);
 
             if (quiz == null)
@@ -118,14 +117,12 @@ namespace QuizAPI.Controllers
             await _db.QuizQuestions
                 .Where(q => q.QuizId == id)
                 .ExecuteDeleteAsync();
-            quiz.QuizQuestions.Clear();
 
             if (request.ExistingQuestionsId != null && request.ExistingQuestionsId.Count > 0)
             {
-                var existingQuestionsList = await _db.Questions.Where(q => request.ExistingQuestionsId.Contains(q.Id)).ToListAsync();
-                foreach (var existingQuestion in existingQuestionsList)
+                foreach (var existingQuestionId in request.ExistingQuestionsId)
                 {
-                    quiz.QuizQuestions.Add(new QuizQuestion { QuestionId = existingQuestion.Id});
+                   _db.QuizQuestions.Add(new QuizQuestion { QuestionId = existingQuestionId, QuizId = quiz.Id});
                 }
             }
             if (request.Questions != null && request.Questions.Count > 0)
@@ -133,7 +130,7 @@ namespace QuizAPI.Controllers
                 foreach (var question in request.Questions)
                 {
                     var q = new Question { Text = question.Text, Answer = question.Answer };
-                    quiz.QuizQuestions.Add(new QuizQuestion { Question = q});
+                    _db.QuizQuestions.Add(new QuizQuestion { Question = q, QuizId = quiz.Id });
                 }
             }
            
