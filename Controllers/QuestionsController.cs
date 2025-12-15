@@ -22,7 +22,7 @@ namespace QuizAPI.Controllers
             var query = _db.Questions.AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(searchText)) { 
-                query = query.Where(q => q.Text.Contains(searchText));
+                query = query.Where(q => EF.Functions.Like(q.Text, $"%{searchText}%"));
             }
 
             var results = await query.Select(q => new QuestionResponse
