@@ -25,7 +25,6 @@ namespace QuizAPI.Export
             {
                 var text = qq.Question.Text ?? string.Empty;
 
-                // Escape za navodnike, čisto ako neko pitanje ima "
                 text = text.Replace("\"", "\"\"");
 
                 sb.Append($"{index}. \"{text}\"");

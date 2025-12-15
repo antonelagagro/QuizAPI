@@ -16,9 +16,23 @@ namespace QuizAPI.Controllers
         private readonly QuizDbContext _db = db;
         private readonly QuizExportService _exportService = exportService;
         [HttpGet]
-        public IActionResult GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 50)
         {
-            var quizzes = _db.Quizzes.ToList();
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 200);
+
+
+            var quizzes = await _db.Quizzes
+             .OrderBy(q => q.Title)
+             .Skip((page - 1) * pageSize)
+             .Take(pageSize)
+             .Select(q => new QuizListItemResponse
+             {
+                 Id = q.Id,
+                 Title = q.Title
+             })
+             .ToListAsync();
+
             return Ok(quizzes);
         }
 
@@ -58,24 +72,27 @@ namespace QuizAPI.Controllers
                 QuizQuestions = []
             };
 
-            if (request.ExistingQuestionsId.Count != 0)
+            if (request.ExistingQuestionsId != null && request.ExistingQuestionsId.Count > 0)
             {
                 var existingQuestions = await _db.Questions.Where(a => request.ExistingQuestionsId.Contains(a.Id)).ToListAsync();
                 foreach (var eq in existingQuestions)
                 {
                     quiz.QuizQuestions.Add(new QuizQuestion
                     {
-                        Question = eq,
-                        Quiz = quiz
+                        QuestionId = eq.Id
                     });
                 }
 
             }
-            foreach (var q in request.Questions)
+            if (request.Questions != null && request.Questions.Count > 0)
             {
-                var question = new Question { Text = q.Text, Answer = q.Answer };
-                quiz.QuizQuestions.Add(new QuizQuestion { Question = question, Quiz = quiz });
+                foreach (var q in request.Questions)
+                {
+                    var question = new Question { Text = q.Text, Answer = q.Answer };
+                    quiz.QuizQuestions.Add(new QuizQuestion { Question = question });
+                }
             }
+
 
             _db.Quizzes.Add(quiz);
             await _db.SaveChangesAsync();
@@ -88,7 +105,9 @@ namespace QuizAPI.Controllers
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpdateQuizRequest request)
         {
-            var quiz = await _db.Quizzes.FirstOrDefaultAsync(a => a.Id == id);
+            var quiz = await _db.Quizzes
+                .Include(q => q.QuizQuestions)
+                .FirstOrDefaultAsync(a => a.Id == id);
 
             if (quiz == null)
                 return NotFound();
@@ -96,32 +115,28 @@ namespace QuizAPI.Controllers
 
             quiz.Title = request.Title ?? quiz.Title;
 
-            _db.QuizQuestions.RemoveRange(quiz.QuizQuestions);
+            await _db.QuizQuestions
+                .Where(q => q.QuizId == id)
+                .ExecuteDeleteAsync();
             quiz.QuizQuestions.Clear();
-            var allQuestions = await _db.Questions.ToListAsync();
 
-            foreach (var questionId in request.ExistingQuestionsId)
+            if (request.ExistingQuestionsId != null && request.ExistingQuestionsId.Count > 0)
             {
-                var existingQuestion = allQuestions.FirstOrDefault(q => q.Id.Equals(questionId));
-                if (existingQuestion != null)
+                var existingQuestionsList = await _db.Questions.Where(q => request.ExistingQuestionsId.Contains(q.Id)).ToListAsync();
+                foreach (var existingQuestion in existingQuestionsList)
                 {
-                    _db.QuizQuestions.Add(new QuizQuestion { Question = existingQuestion, Quiz = quiz});
+                    quiz.QuizQuestions.Add(new QuizQuestion { QuestionId = existingQuestion.Id});
                 }
             }
-            foreach (var question in request.Questions)
+            if (request.Questions != null && request.Questions.Count > 0)
             {
-                var existingQuestion = allQuestions.FirstOrDefault(q => q.Text == question.Text && q.Answer == question.Answer);
-                if (existingQuestion == null)
+                foreach (var question in request.Questions)
                 {
                     var q = new Question { Text = question.Text, Answer = question.Answer };
-                    _db.QuizQuestions.Add(new QuizQuestion { Question = q, Quiz = quiz, QuizId = quiz.Id });
-                }
-                else
-                {
-                    _db.QuizQuestions.Add(new QuizQuestion { Question = existingQuestion, Quiz = quiz});
-
+                    quiz.QuizQuestions.Add(new QuizQuestion { Question = q});
                 }
             }
+           
 
             await _db.SaveChangesAsync();
 
@@ -153,7 +168,7 @@ namespace QuizAPI.Controllers
         [HttpGet("{id:guid}/export")]
         public async Task<IActionResult> Export(Guid id, [FromQuery] string format)
         {
-            
+
             var quiz = await _db.Quizzes
                 .Include(q => q.QuizQuestions)
                     .ThenInclude(qq => qq.Question)
@@ -168,7 +183,6 @@ namespace QuizAPI.Controllers
 
             var bytes = exporter.Export(quiz);
 
-            // 4. Složi naziv fajla (malo sanitiziramo title)
             var safeTitle = string.Join("_", quiz.Title.Split(Path.GetInvalidFileNameChars()));
             if (string.IsNullOrWhiteSpace(safeTitle))
             {
